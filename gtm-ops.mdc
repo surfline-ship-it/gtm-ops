@@ -1,0 +1,29 @@
+---
+description: GTM Ops project conventions — always apply
+alwaysApply: true
+---
+
+# GTM Ops — project rules
+
+## What this app is
+Single-user internal ops board for a cold-outbound agency (LeadGhost) and M&A advisory (Surfline Capital). Three domains: list-building pipeline, campaign progress, ODP launch pre-flight checklists. One user, no multi-tenancy, no signup flows — do not add auth systems, user tables, or org models.
+
+## Architecture (do not change without being asked)
+- Next.js 14 App Router, TypeScript, deployed on Vercel.
+- All persistent state is ONE JSON blob in Upstash Redis under key `gtm-ops:state:v1` (see `lib/redis.ts` for the `BoardState` type). Read/write via `/api/state`. Do not introduce a relational DB, ORM, or per-entity keys unless explicitly asked.
+- Instantly API v2 is called ONLY server-side via `lib/instantly.ts` and proxied through `/api/instantly/sync`. Never call Instantly from client components. Never expose `INSTANTLY_API_KEY` to the browser or log it.
+- Basic auth lives in `middleware.ts` (APP_USER/APP_PASS). Keep any new routes behind it.
+- No component library, no Tailwind. Styling is inline styles + CSS variables defined in `app/globals.css` (--bg, --panel, --line, --ink, --dim, --faint, --teal, --amber, --red, --blue). New UI must use these variables — no new hex values, no light mode.
+- Fonts: Barlow Condensed (headers/tabs), IBM Plex Mono (labels, metrics, chips), Inter (body). Keep this hierarchy.
+
+## Conventions
+- Instantly `campaign_status` mapping lives in `lib/instantly.ts` STATUS_MAP; `3 = Completed` drives completion tracking. Field-name variants are handled by the `num()` helper — extend it there, don't scatter fallbacks.
+- Mutations flow through `persist()` in `app/page.tsx` (optimistic setState + debounced PUT). New state must extend `BoardState` in `lib/redis.ts` and stay backward-compatible with existing stored blobs: always spread defaults (`{ ...emptyState, ...loaded }`) so old data doesn't crash new code.
+- Dates are `YYYY-MM-DD` strings via `today()`. IDs via `uid()`. Keep it.
+- Error states render inline in the UI in plain language (see the Instantly sync error pattern) — no toast libraries.
+- Any new env var must be added to `.env.example` with a comment, and mentioned in README's deploy section.
+
+## When editing
+- Run `npx tsc --noEmit` and `npm run build` before declaring a task done.
+- Prefer editing existing files over adding new abstractions. This is a small tool; keep it boring and readable.
+- Do not add analytics, telemetry, or external scripts.
