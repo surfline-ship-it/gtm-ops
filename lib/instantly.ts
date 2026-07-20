@@ -6,7 +6,7 @@
 const BASE = "https://api.instantly.ai/api/v2";
 
 // Instantly campaign_status codes (verify against current docs if these drift)
-const STATUS_MAP: Record<number, string> = {
+export const STATUS_MAP: Record<number, string> = {
   0: "Draft",
   1: "Active",
   2: "Paused",
@@ -15,6 +15,22 @@ const STATUS_MAP: Record<number, string> = {
   [-1]: "Deleted",
   [-2]: "Suspended",
 };
+
+export function statusFromCode(statusCode: number): {
+  status: string;
+  isComplete: boolean;
+} {
+  return {
+    status: STATUS_MAP[statusCode] ?? `Status ${statusCode}`,
+    isComplete: statusCode === 3,
+  };
+}
+
+/** Map Instantly webhook event_type → campaign_status code when known. */
+export function statusCodeFromEventType(eventType: string): number | null {
+  if (eventType === "campaign_completed") return 3;
+  return null;
+}
 
 export type InstantlyCampaign = {
   campaign_id: string;
@@ -63,12 +79,13 @@ export async function fetchCampaignAnalytics(): Promise<InstantlyCampaign[]> {
 
   return arr.map((c) => {
     const statusCode = typeof c.campaign_status === "number" ? c.campaign_status : -99;
+    const { status, isComplete } = statusFromCode(statusCode);
     return {
       campaign_id: String(c.campaign_id ?? ""),
       campaign_name: String(c.campaign_name ?? "Unnamed"),
       statusCode,
-      status: STATUS_MAP[statusCode] ?? `Status ${statusCode}`,
-      isComplete: statusCode === 3,
+      status,
+      isComplete,
       leads: num(c, "leads_count", "total_leads"),
       contacted: num(c, "contacted_count", "total_contacted"),
       sent: num(c, "emails_sent_count", "sent_count", "total_sent"),
@@ -77,5 +94,18 @@ export async function fetchCampaignAnalytics(): Promise<InstantlyCampaign[]> {
       bounced: num(c, "bounced_count", "total_bounced"),
       raw: c,
     };
+  });
+}
+
+/** Overlay webhook status events onto analytics rows (webhook wins on status). */
+export function applyWebhookStatuses(
+  campaigns: InstantlyCampaign[],
+  events: Record<string, { statusCode: number | null; campaign_name?: string; event_type?: string }>
+): InstantlyCampaign[] {
+  return campaigns.map((c) => {
+    const ev = events[c.campaign_id];
+    if (!ev || ev.statusCode == null) return c;
+    const { status, isComplete } = statusFromCode(ev.statusCode);
+    return { ...c, statusCode: ev.statusCode, status, isComplete };
   });
 }

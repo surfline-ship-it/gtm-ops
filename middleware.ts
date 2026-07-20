@@ -19,5 +19,8 @@ export function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // Instantly webhooks authenticate via WEBHOOK_SECRET, not basic auth.
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|api/instantly/webhook).*)",
+  ],
 };

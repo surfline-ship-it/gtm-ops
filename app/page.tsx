@@ -130,6 +130,13 @@ const inputStyle: React.CSSProperties = {
   minWidth: 0,
 };
 
+const btnTones: Record<string, React.CSSProperties> = {
+  ghost: { background: "transparent", color: "var(--dim)", border: "1px solid var(--line)" },
+  accent: { background: "var(--teal)", color: "#0c1418", border: "1px solid var(--teal)" },
+  danger: { background: "transparent", color: "var(--red)", border: "1px solid var(--red)" },
+  link: { background: "transparent", color: "var(--blue)", border: "1px solid var(--blue)" },
+};
+
 function Btn({
   onClick,
   children,
@@ -143,17 +150,12 @@ function Btn({
   small?: boolean;
   title?: string;
 }) {
-  const tones: Record<string, React.CSSProperties> = {
-    ghost: { background: "transparent", color: "var(--dim)", border: "1px solid var(--line)" },
-    accent: { background: "var(--teal)", color: "#0c1418", border: "1px solid var(--teal)" },
-    danger: { background: "transparent", color: "var(--red)", border: "1px solid var(--red)" },
-  };
   return (
     <button
       onClick={onClick}
       title={title}
       style={{
-        ...tones[tone],
+        ...btnTones[tone],
         borderRadius: 4,
         padding: small ? "3px 9px" : "7px 14px",
         fontSize: small ? 11 : 12.5,
@@ -166,6 +168,34 @@ function Btn({
     >
       {children}
     </button>
+  );
+}
+
+/** External doc link styled like a button; omitted when url is empty. */
+function LinkOut({ href, children }: { href?: string; children: React.ReactNode }) {
+  const url = (href || "").trim();
+  if (!url) return null;
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{
+        ...btnTones.link,
+        borderRadius: 4,
+        padding: "3px 9px",
+        fontSize: 11,
+        fontWeight: 600,
+        cursor: "pointer",
+        fontFamily: "'IBM Plex Mono', monospace",
+        letterSpacing: "0.04em",
+        whiteSpace: "nowrap",
+        textDecoration: "none",
+        display: "inline-block",
+      }}
+    >
+      {children} ↗
+    </a>
   );
 }
 
@@ -425,7 +455,7 @@ export default function Page() {
             letterSpacing: "0.1em",
           }}
         >
-          LEADGHOST · SURFLINE
+          SURFLINE
         </span>
         <span
           style={{
@@ -541,6 +571,8 @@ export default function Page() {
             remove={(id) => removeItem("launches", id)}
             showForm={showForm}
             setShowForm={setShowForm}
+            editId={editId}
+            setEditId={setEditId}
           />
         )}
       </main>
@@ -567,7 +599,16 @@ function ListsTab({
   editId: string | null;
   setEditId: (v: string | null) => void;
 }) {
-  const blank = { name: "", client: "", rows: "", source: "Clay", notes: "" };
+  const blank = {
+    name: "",
+    client: "",
+    rows: "",
+    source: "Clay",
+    notes: "",
+    thesisUrl: "",
+    buildUrl: "",
+    finalListUrl: "",
+  };
   const [draft, setDraft] = useState(blank);
   const editing = items.find((x) => x.id === editId);
 
@@ -579,6 +620,9 @@ function ListsTab({
         rows: editing.rows,
         source: editing.source,
         notes: editing.notes,
+        thesisUrl: editing.thesisUrl || "",
+        buildUrl: editing.buildUrl || "",
+        finalListUrl: editing.finalListUrl || "",
       });
   }, [editId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -640,6 +684,30 @@ function ListsTab({
               onChange={(e) => setDraft({ ...draft, notes: e.target.value })}
             />
           </Field>
+          <Field label="Search Thesis URL" grow>
+            <input
+              style={inputStyle}
+              value={draft.thesisUrl}
+              placeholder="https://…"
+              onChange={(e) => setDraft({ ...draft, thesisUrl: e.target.value })}
+            />
+          </Field>
+          <Field label="Build URL" grow>
+            <input
+              style={inputStyle}
+              value={draft.buildUrl}
+              placeholder="https://…"
+              onChange={(e) => setDraft({ ...draft, buildUrl: e.target.value })}
+            />
+          </Field>
+          <Field label="Final List URL" grow>
+            <input
+              style={inputStyle}
+              value={draft.finalListUrl}
+              placeholder="https://…"
+              onChange={(e) => setDraft({ ...draft, finalListUrl: e.target.value })}
+            />
+          </Field>
           <div style={{ alignSelf: "flex-end" }}>
             <Btn tone="accent" onClick={submit}>
               {editing ? "save" : "add list"}
@@ -670,6 +738,13 @@ function ListsTab({
             {l.notes && (
               <div style={{ fontSize: 12.5, color: "var(--dim)", marginTop: 4 }}>
                 {l.notes}
+              </div>
+            )}
+            {(l.thesisUrl || l.buildUrl || l.finalListUrl) && (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                <LinkOut href={l.thesisUrl}>Search Thesis</LinkOut>
+                <LinkOut href={l.buildUrl}>Build</LinkOut>
+                <LinkOut href={l.finalListUrl}>Final List</LinkOut>
               </div>
             )}
           </div>
@@ -1063,21 +1138,44 @@ function LaunchesTab({
   remove,
   showForm,
   setShowForm,
+  editId,
+  setEditId,
 }: {
   items: Launch[];
   mutate: (fn: (arr: Launch[]) => Launch[]) => void;
   remove: (id: string) => void;
   showForm: boolean;
   setShowForm: (v: boolean) => void;
+  editId: string | null;
+  setEditId: (v: string | null) => void;
 }) {
-  const blank = { name: "", client: "", targetDate: "", notes: "" };
+  const blank = { name: "", client: "", targetDate: "", notes: "", thesisUrl: "" };
   const [draft, setDraft] = useState(blank);
+  const editing = items.find((x) => x.id === editId);
+
+  useEffect(() => {
+    if (editing)
+      setDraft({
+        name: editing.name,
+        client: editing.client,
+        targetDate: editing.targetDate,
+        notes: editing.notes,
+        thesisUrl: editing.thesisUrl || "",
+      });
+  }, [editId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = () => {
     if (!draft.name.trim()) return;
-    const checklist: Record<string, boolean> = {};
-    CHECKLIST_ITEMS.forEach((i) => (checklist[i.key] = false));
-    mutate((arr) => [{ id: uid(), ...draft, checklist, updated: today() }, ...arr]);
+    if (editing) {
+      mutate((arr) =>
+        arr.map((x) => (x.id === editId ? { ...x, ...draft, updated: today() } : x))
+      );
+      setEditId(null);
+    } else {
+      const checklist: Record<string, boolean> = {};
+      CHECKLIST_ITEMS.forEach((i) => (checklist[i.key] = false));
+      mutate((arr) => [{ id: uid(), ...draft, checklist, updated: today() }, ...arr]);
+    }
     setDraft(blank);
     setShowForm(false);
   };
@@ -1097,7 +1195,7 @@ function LaunchesTab({
 
   return (
     <div>
-      {showForm && (
+      {(showForm || editing) && (
         <div style={formBox}>
           <Field label="Launch name" grow>
             <input
@@ -1129,9 +1227,17 @@ function LaunchesTab({
               onChange={(e) => setDraft({ ...draft, notes: e.target.value })}
             />
           </Field>
+          <Field label="Search Thesis URL" grow>
+            <input
+              style={inputStyle}
+              value={draft.thesisUrl}
+              placeholder="https://…"
+              onChange={(e) => setDraft({ ...draft, thesisUrl: e.target.value })}
+            />
+          </Field>
           <div style={{ alignSelf: "flex-end" }}>
             <Btn tone="accent" onClick={submit}>
-              add launch
+              {editing ? "save" : "add launch"}
             </Btn>
           </div>
         </div>
@@ -1170,10 +1276,18 @@ function LaunchesTab({
                     {l.notes}
                   </div>
                 )}
+                {l.thesisUrl && (
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
+                    <LinkOut href={l.thesisUrl}>Search Thesis</LinkOut>
+                  </div>
+                )}
               </div>
               <Chip color={ready ? "var(--teal)" : "var(--amber)"}>
                 {ready ? "READY TO LAUNCH" : `${done}/${total} pre-flight`}
               </Chip>
+              <Btn small onClick={() => setEditId(l.id)}>
+                edit
+              </Btn>
               <Btn small tone="danger" onClick={() => remove(l.id)}>
                 ✕
               </Btn>
