@@ -33,6 +33,12 @@ export type ListItem = {
   thesisUrl: string;
   buildUrl: string;
   finalListUrl: string;
+  /** YYYY-MM-DD — when list work started. */
+  startDate: string;
+  /** YYYY-MM-DD — when QC finished. Review time = qcFinishDate − startDate. */
+  qcFinishDate: string;
+  /** YYYY-MM-DD — when list launched. Launch time = launchDate − startDate. */
+  launchDate: string;
   updated: string;
 };
 

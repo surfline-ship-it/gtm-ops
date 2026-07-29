@@ -38,6 +38,40 @@ const uid = () =>
   Math.random().toString(36).slice(2, 9) + Date.now().toString(36);
 const today = () => new Date().toISOString().slice(0, 10);
 
+/** Parse YYYY-MM-DD as local calendar date (avoids UTC offset skew). */
+function parseYmd(s: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s?.trim() ?? "");
+  if (!m) return null;
+  return new Date(+m[1], +m[2] - 1, +m[3]);
+}
+
+/** Whole calendar days from a → b; null if either date missing/invalid. */
+function daysBetween(a: string, b: string): number | null {
+  const start = parseYmd(a);
+  const end = parseYmd(b);
+  if (!start || !end) return null;
+  return Math.round((end.getTime() - start.getTime()) / 86_400_000);
+}
+
+function avgDays(values: number[]): number | null {
+  if (!values.length) return null;
+  return values.reduce((sum, n) => sum + n, 0) / values.length;
+}
+
+function formatDays(n: number | null): string {
+  if (n == null) return "—";
+  const rounded = Math.round(n * 10) / 10;
+  return `${rounded % 1 === 0 ? rounded.toFixed(0) : rounded.toFixed(1)}d`;
+}
+
+function listReviewDays(l: ListItem): number | null {
+  return daysBetween(l.startDate || "", l.qcFinishDate || "");
+}
+
+function listLaunchDays(l: ListItem): number | null {
+  return daysBetween(l.startDate || "", l.launchDate || "");
+}
+
 const emptyState: BoardState = {
   lists: [],
   campaigns: [],
@@ -267,7 +301,15 @@ function Metric({
   );
 }
 
-function Stat({ label, value, color }: { label: string; value: number; color: string }) {
+function Stat({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: React.ReactNode;
+  color: string;
+}) {
   return (
     <div
       style={{
@@ -413,6 +455,12 @@ export default function Page() {
   const launchesReady = state.launches.filter((l) =>
     CHECKLIST_ITEMS.every((i) => l.checklist[i.key])
   ).length;
+  const avgReview = avgDays(
+    state.lists.map(listReviewDays).filter((n): n is number => n != null)
+  );
+  const avgLaunch = avgDays(
+    state.lists.map(listLaunchDays).filter((n): n is number => n != null)
+  );
 
   const tabs = [
     { id: "lists" as const, label: "Lists", count: state.lists.length },
@@ -472,6 +520,8 @@ export default function Page() {
       {/* status strip */}
       <div style={{ display: "flex", gap: 10, padding: "14px 24px", flexWrap: "wrap" }}>
         <Stat label="lists in flight" value={listsInFlight} color="var(--blue)" />
+        <Stat label="avg time to review" value={formatDays(avgReview)} color="var(--amber)" />
+        <Stat label="avg time to launch" value={formatDays(avgLaunch)} color="var(--teal)" />
         <Stat label="live campaigns" value={liveCount} color="var(--teal)" />
         <Stat label="completed (instantly)" value={completedCount} color="var(--dim)" />
         <Stat label="launches ready" value={launchesReady} color="var(--amber)" />
@@ -608,6 +658,9 @@ function ListsTab({
     thesisUrl: "",
     buildUrl: "",
     finalListUrl: "",
+    startDate: today(),
+    qcFinishDate: "",
+    launchDate: "",
   };
   const [draft, setDraft] = useState(blank);
   const editing = items.find((x) => x.id === editId);
@@ -623,6 +676,9 @@ function ListsTab({
         thesisUrl: editing.thesisUrl || "",
         buildUrl: editing.buildUrl || "",
         finalListUrl: editing.finalListUrl || "",
+        startDate: editing.startDate || "",
+        qcFinishDate: editing.qcFinishDate || "",
+        launchDate: editing.launchDate || "",
       });
   }, [editId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -634,11 +690,25 @@ function ListsTab({
       );
       setEditId(null);
     } else {
-      mutate((arr) => [{ id: uid(), ...draft, stage: 0, updated: today() }, ...arr]);
+      mutate((arr) => [
+        {
+          id: uid(),
+          ...draft,
+          stage: 0,
+          startDate: draft.startDate || today(),
+          qcFinishDate: draft.qcFinishDate || "",
+          launchDate: draft.launchDate || "",
+          updated: today(),
+        },
+        ...arr,
+      ]);
     }
-    setDraft(blank);
+    setDraft({ ...blank, startDate: today() });
     setShowForm(false);
   };
+
+  const draftReview = daysBetween(draft.startDate, draft.qcFinishDate);
+  const draftLaunch = daysBetween(draft.startDate, draft.launchDate);
 
   return (
     <div>
@@ -708,6 +778,60 @@ function ListsTab({
               onChange={(e) => setDraft({ ...draft, finalListUrl: e.target.value })}
             />
           </Field>
+          <Field label="Start date">
+            <input
+              style={inputStyle}
+              type="date"
+              value={draft.startDate}
+              onChange={(e) => setDraft({ ...draft, startDate: e.target.value })}
+            />
+          </Field>
+          <Field label="QC finish">
+            <input
+              style={inputStyle}
+              type="date"
+              value={draft.qcFinishDate}
+              onChange={(e) => setDraft({ ...draft, qcFinishDate: e.target.value })}
+            />
+          </Field>
+          <Field label="Launch date">
+            <input
+              style={inputStyle}
+              type="date"
+              value={draft.launchDate}
+              onChange={(e) => setDraft({ ...draft, launchDate: e.target.value })}
+            />
+          </Field>
+          {(draftReview != null || draftLaunch != null) && (
+            <div
+              style={{
+                alignSelf: "flex-end",
+                display: "flex",
+                gap: 16,
+                paddingBottom: 4,
+                fontFamily: "'IBM Plex Mono', monospace",
+                fontSize: 12,
+                color: "var(--dim)",
+              }}
+            >
+              {draftReview != null && (
+                <span>
+                  review{" "}
+                  <span style={{ color: "var(--amber)", fontWeight: 600 }}>
+                    {formatDays(draftReview)}
+                  </span>
+                </span>
+              )}
+              {draftLaunch != null && (
+                <span>
+                  launch{" "}
+                  <span style={{ color: "var(--teal)", fontWeight: 600 }}>
+                    {formatDays(draftLaunch)}
+                  </span>
+                </span>
+              )}
+            </div>
+          )}
           <div style={{ alignSelf: "flex-end" }}>
             <Btn tone="accent" onClick={submit}>
               {editing ? "save" : "add list"}
@@ -720,7 +844,10 @@ function ListsTab({
         <Empty msg="No lists yet. Add the first pull to start tracking it through QC." />
       )}
 
-      {items.map((l) => (
+      {items.map((l) => {
+        const reviewDays = listReviewDays(l);
+        const launchDays = listLaunchDays(l);
+        return (
         <div key={l.id} style={rowCard}>
           <div style={{ flexGrow: 1, minWidth: 200 }}>
             <div style={{ fontWeight: 600, fontSize: 14.5 }}>{l.name}</div>
@@ -740,6 +867,23 @@ function ListsTab({
                 {l.notes}
               </div>
             )}
+            {(l.startDate || l.qcFinishDate || l.launchDate) && (
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "var(--faint)",
+                  marginTop: 6,
+                  fontFamily: "'IBM Plex Mono', monospace",
+                  letterSpacing: "0.02em",
+                }}
+              >
+                {l.startDate ? `start ${l.startDate}` : "start —"}
+                {" · "}
+                {l.qcFinishDate ? `qc ${l.qcFinishDate}` : "qc —"}
+                {" · "}
+                {l.launchDate ? `launch ${l.launchDate}` : "launch —"}
+              </div>
+            )}
             {(l.thesisUrl || l.buildUrl || l.finalListUrl) && (
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
                 <LinkOut href={l.thesisUrl}>Search Thesis</LinkOut>
@@ -747,6 +891,11 @@ function ListsTab({
                 <LinkOut href={l.finalListUrl}>Final List</LinkOut>
               </div>
             )}
+          </div>
+
+          <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+            <Metric label="review" value={formatDays(reviewDays)} highlight={reviewDays != null} />
+            <Metric label="to launch" value={formatDays(launchDays)} highlight={launchDays != null} />
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
@@ -817,7 +966,8 @@ function ListsTab({
             </Btn>
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
