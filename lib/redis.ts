@@ -35,9 +35,9 @@ export type ListItem = {
   finalListUrl: string;
   /** YYYY-MM-DD — when list work started. */
   startDate: string;
-  /** YYYY-MM-DD — when QC finished. Review time = qcFinishDate − startDate. */
+  /** YYYY-MM-DD — when QC finished. Time to QC = qcFinishDate − startDate. */
   qcFinishDate: string;
-  /** YYYY-MM-DD — when list launched. Launch time = launchDate − startDate. */
+  /** YYYY-MM-DD — when list launched. Time to approve = launchDate − qcFinishDate; time to launch = launchDate − startDate. */
   launchDate: string;
   updated: string;
 };

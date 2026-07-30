@@ -64,10 +64,17 @@ function formatDays(n: number | null): string {
   return `${rounded % 1 === 0 ? rounded.toFixed(0) : rounded.toFixed(1)}d`;
 }
 
-function listReviewDays(l: ListItem): number | null {
+/** Start → QC finish. */
+function listQcDays(l: ListItem): number | null {
   return daysBetween(l.startDate || "", l.qcFinishDate || "");
 }
 
+/** QC finish → launch. */
+function listApproveDays(l: ListItem): number | null {
+  return daysBetween(l.qcFinishDate || "", l.launchDate || "");
+}
+
+/** Start → launch (full cycle). */
 function listLaunchDays(l: ListItem): number | null {
   return daysBetween(l.startDate || "", l.launchDate || "");
 }
@@ -455,8 +462,11 @@ export default function Page() {
   const launchesReady = state.launches.filter((l) =>
     CHECKLIST_ITEMS.every((i) => l.checklist[i.key])
   ).length;
-  const avgReview = avgDays(
-    state.lists.map(listReviewDays).filter((n): n is number => n != null)
+  const avgQc = avgDays(
+    state.lists.map(listQcDays).filter((n): n is number => n != null)
+  );
+  const avgApprove = avgDays(
+    state.lists.map(listApproveDays).filter((n): n is number => n != null)
   );
   const avgLaunch = avgDays(
     state.lists.map(listLaunchDays).filter((n): n is number => n != null)
@@ -520,7 +530,8 @@ export default function Page() {
       {/* status strip */}
       <div style={{ display: "flex", gap: 10, padding: "14px 24px", flexWrap: "wrap" }}>
         <Stat label="lists in flight" value={listsInFlight} color="var(--blue)" />
-        <Stat label="avg time to review" value={formatDays(avgReview)} color="var(--amber)" />
+        <Stat label="avg time to qc" value={formatDays(avgQc)} color="var(--amber)" />
+        <Stat label="avg time to approve" value={formatDays(avgApprove)} color="var(--blue)" />
         <Stat label="avg time to launch" value={formatDays(avgLaunch)} color="var(--teal)" />
         <Stat label="live campaigns" value={liveCount} color="var(--teal)" />
         <Stat label="completed (instantly)" value={completedCount} color="var(--dim)" />
@@ -707,7 +718,8 @@ function ListsTab({
     setShowForm(false);
   };
 
-  const draftReview = daysBetween(draft.startDate, draft.qcFinishDate);
+  const draftQc = daysBetween(draft.startDate, draft.qcFinishDate);
+  const draftApprove = daysBetween(draft.qcFinishDate, draft.launchDate);
   const draftLaunch = daysBetween(draft.startDate, draft.launchDate);
 
   return (
@@ -802,7 +814,7 @@ function ListsTab({
               onChange={(e) => setDraft({ ...draft, launchDate: e.target.value })}
             />
           </Field>
-          {(draftReview != null || draftLaunch != null) && (
+          {(draftQc != null || draftApprove != null || draftLaunch != null) && (
             <div
               style={{
                 alignSelf: "flex-end",
@@ -814,17 +826,25 @@ function ListsTab({
                 color: "var(--dim)",
               }}
             >
-              {draftReview != null && (
+              {draftQc != null && (
                 <span>
-                  review{" "}
+                  to qc{" "}
                   <span style={{ color: "var(--amber)", fontWeight: 600 }}>
-                    {formatDays(draftReview)}
+                    {formatDays(draftQc)}
+                  </span>
+                </span>
+              )}
+              {draftApprove != null && (
+                <span>
+                  to approve{" "}
+                  <span style={{ color: "var(--blue)", fontWeight: 600 }}>
+                    {formatDays(draftApprove)}
                   </span>
                 </span>
               )}
               {draftLaunch != null && (
                 <span>
-                  launch{" "}
+                  to launch{" "}
                   <span style={{ color: "var(--teal)", fontWeight: 600 }}>
                     {formatDays(draftLaunch)}
                   </span>
@@ -845,7 +865,8 @@ function ListsTab({
       )}
 
       {items.map((l) => {
-        const reviewDays = listReviewDays(l);
+        const qcDays = listQcDays(l);
+        const approveDays = listApproveDays(l);
         const launchDays = listLaunchDays(l);
         return (
         <div key={l.id} style={rowCard}>
@@ -894,7 +915,8 @@ function ListsTab({
           </div>
 
           <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
-            <Metric label="review" value={formatDays(reviewDays)} highlight={reviewDays != null} />
+            <Metric label="to qc" value={formatDays(qcDays)} highlight={qcDays != null} />
+            <Metric label="to approve" value={formatDays(approveDays)} highlight={approveDays != null} />
             <Metric label="to launch" value={formatDays(launchDays)} highlight={launchDays != null} />
           </div>
 
