@@ -2,13 +2,18 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { BoardState, ListItem, ManualCampaign, Launch } from "@/lib/redis";
+import {
+  LIST_STAGES,
+  LIST_STAGE_LAST,
+  emptyState as redisEmptyState,
+  migrateBoardState,
+} from "@/lib/redis";
 
 /* ============================================================
    GTM OPS — Lists pipeline · Campaigns (Instantly-synced + manual)
    · ODP launch pre-flight
    ============================================================ */
 
-const LIST_STAGES = ["Pulled", "Enriched", "QC", "Approved", "Loaded"];
 const CAMPAIGN_STATUSES = ["Draft", "Warming", "Live", "Paused", "Done"];
 const PLATFORMS = ["Smartlead", "HubSpot", "Other"];
 
@@ -64,30 +69,25 @@ function formatDays(n: number | null): string {
   return `${rounded % 1 === 0 ? rounded.toFixed(0) : rounded.toFixed(1)}d`;
 }
 
-/** Start → QC finish. */
+/** Start → QC complete. */
 function listQcDays(l: ListItem): number | null {
   return daysBetween(l.startDate || "", l.qcFinishDate || "");
 }
 
-/** QC finish → launch. */
+/** QC complete → approved. */
 function listApproveDays(l: ListItem): number | null {
-  return daysBetween(l.qcFinishDate || "", l.launchDate || "");
+  return daysBetween(l.qcFinishDate || "", l.approvedDate || "");
 }
 
-/** Start → launch (full cycle). */
+/** Approved → loaded / launched. */
 function listLaunchDays(l: ListItem): number | null {
-  return daysBetween(l.startDate || "", l.launchDate || "");
+  return daysBetween(l.approvedDate || "", l.launchDate || "");
 }
 
-const emptyState: BoardState = {
-  lists: [],
-  campaigns: [],
-  launches: [],
-  instantlyClientMap: {},
-};
+const emptyState: BoardState = redisEmptyState;
 
 const stageColor = (i: number) =>
-  i >= 4 ? "var(--teal)" : i >= 2 ? "var(--amber)" : "var(--blue)";
+  i >= 5 ? "var(--teal)" : i >= 2 ? "var(--amber)" : "var(--blue)";
 
 const statusColor = (s: string) =>
   ({
@@ -374,7 +374,7 @@ export default function Page() {
   useEffect(() => {
     fetch("/api/state")
       .then((r) => r.json())
-      .then((s) => setState({ ...emptyState, ...s }))
+      .then((s) => setState(migrateBoardState(s)))
       .catch(() => setState(emptyState));
   }, []);
 
@@ -458,7 +458,7 @@ export default function Page() {
     (instantly?.filter((c) => c.status === "Active").length ?? 0) +
     state.campaigns.filter((c) => c.status === "Live").length;
   const completedCount = instantly?.filter((c) => c.isComplete).length ?? 0;
-  const listsInFlight = state.lists.filter((l) => l.stage < 4).length;
+  const listsInFlight = state.lists.filter((l) => l.stage < LIST_STAGE_LAST).length;
   const launchesReady = state.launches.filter((l) =>
     CHECKLIST_ITEMS.every((i) => l.checklist[i.key])
   ).length;
@@ -671,6 +671,7 @@ function ListsTab({
     finalListUrl: "",
     startDate: today(),
     qcFinishDate: "",
+    approvedDate: "",
     launchDate: "",
   };
   const [draft, setDraft] = useState(blank);
@@ -689,6 +690,7 @@ function ListsTab({
         finalListUrl: editing.finalListUrl || "",
         startDate: editing.startDate || "",
         qcFinishDate: editing.qcFinishDate || "",
+        approvedDate: editing.approvedDate || "",
         launchDate: editing.launchDate || "",
       });
   }, [editId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -708,6 +710,7 @@ function ListsTab({
           stage: 0,
           startDate: draft.startDate || today(),
           qcFinishDate: draft.qcFinishDate || "",
+          approvedDate: draft.approvedDate || "",
           launchDate: draft.launchDate || "",
           updated: today(),
         },
@@ -719,8 +722,8 @@ function ListsTab({
   };
 
   const draftQc = daysBetween(draft.startDate, draft.qcFinishDate);
-  const draftApprove = daysBetween(draft.qcFinishDate, draft.launchDate);
-  const draftLaunch = daysBetween(draft.startDate, draft.launchDate);
+  const draftApprove = daysBetween(draft.qcFinishDate, draft.approvedDate);
+  const draftLaunch = daysBetween(draft.approvedDate, draft.launchDate);
 
   return (
     <div>
@@ -798,7 +801,7 @@ function ListsTab({
               onChange={(e) => setDraft({ ...draft, startDate: e.target.value })}
             />
           </Field>
-          <Field label="QC finish">
+          <Field label="QC complete">
             <input
               style={inputStyle}
               type="date"
@@ -806,7 +809,15 @@ function ListsTab({
               onChange={(e) => setDraft({ ...draft, qcFinishDate: e.target.value })}
             />
           </Field>
-          <Field label="Launch date">
+          <Field label="Approved">
+            <input
+              style={inputStyle}
+              type="date"
+              value={draft.approvedDate}
+              onChange={(e) => setDraft({ ...draft, approvedDate: e.target.value })}
+            />
+          </Field>
+          <Field label="Launch / loaded">
             <input
               style={inputStyle}
               type="date"
@@ -861,7 +872,7 @@ function ListsTab({
       )}
 
       {items.length === 0 && (
-        <Empty msg="No lists yet. Add the first pull to start tracking it through QC." />
+        <Empty msg="No lists yet. Add a thesis to start tracking it through build, QC, approval, and launch." />
       )}
 
       {items.map((l) => {
@@ -888,7 +899,7 @@ function ListsTab({
                 {l.notes}
               </div>
             )}
-            {(l.startDate || l.qcFinishDate || l.launchDate) && (
+            {(l.startDate || l.qcFinishDate || l.approvedDate || l.launchDate) && (
               <div
                 style={{
                   fontSize: 11,
@@ -901,6 +912,8 @@ function ListsTab({
                 {l.startDate ? `start ${l.startDate}` : "start —"}
                 {" · "}
                 {l.qcFinishDate ? `qc ${l.qcFinishDate}` : "qc —"}
+                {" · "}
+                {l.approvedDate ? `approved ${l.approvedDate}` : "approved —"}
                 {" · "}
                 {l.launchDate ? `launch ${l.launchDate}` : "launch —"}
               </div>
@@ -920,12 +933,12 @@ function ListsTab({
             <Metric label="to launch" value={formatDays(launchDays)} highlight={launchDays != null} />
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 3, flexWrap: "wrap" }}>
             {LIST_STAGES.map((s, i) => (
               <div key={s} title={s} style={{ textAlign: "center" }}>
                 <div
                   style={{
-                    width: 34,
+                    width: 28,
                     height: 6,
                     borderRadius: 2,
                     background: i <= l.stage ? stageColor(l.stage) : "var(--line)",
@@ -933,11 +946,15 @@ function ListsTab({
                 />
                 <div
                   style={{
-                    fontSize: 8.5,
+                    fontSize: 8,
                     marginTop: 3,
                     color: i <= l.stage ? "var(--dim)" : "var(--faint)",
                     fontFamily: "'IBM Plex Mono', monospace",
-                    letterSpacing: "0.04em",
+                    letterSpacing: "0.02em",
+                    maxWidth: 36,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
                   }}
                 >
                   {s}
@@ -946,7 +963,7 @@ function ListsTab({
             ))}
           </div>
 
-          <Chip color={stageColor(l.stage)}>{LIST_STAGES[l.stage]}</Chip>
+          <Chip color={stageColor(l.stage)}>{LIST_STAGES[l.stage] ?? "?"}</Chip>
 
           <div style={{ display: "flex", gap: 6 }}>
             {l.stage > 0 && (
@@ -964,7 +981,7 @@ function ListsTab({
                 ◂
               </Btn>
             )}
-            {l.stage < 4 && (
+            {l.stage < LIST_STAGE_LAST && (
               <Btn
                 small
                 tone="accent"
