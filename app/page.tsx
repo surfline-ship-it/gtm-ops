@@ -84,6 +84,21 @@ function listLaunchDays(l: ListItem): number | null {
   return daysBetween(l.approvedDate || "", l.launchDate || "");
 }
 
+/**
+ * When advancing into a milestone stage, stamp the matching date if blank.
+ * Does not overwrite dates already set (edit form remains source of truth for corrections).
+ * 4 QC Done → qcFinishDate · 5 Approved → approvedDate · 6 Loaded → launchDate
+ */
+function withStageDateStamps(list: ListItem, nextStage: number): ListItem {
+  const d = today();
+  const patch: Partial<ListItem> = { stage: nextStage, updated: d };
+  if (!list.startDate && nextStage >= 0) patch.startDate = d;
+  if (nextStage === 4 && !list.qcFinishDate) patch.qcFinishDate = d;
+  if (nextStage === 5 && !list.approvedDate) patch.approvedDate = d;
+  if (nextStage === 6 && !list.launchDate) patch.launchDate = d;
+  return { ...list, ...patch };
+}
+
 const emptyState: BoardState = redisEmptyState;
 
 const stageColor = (i: number) =>
@@ -989,7 +1004,7 @@ function ListsTab({
                 onClick={() =>
                   mutate((arr) =>
                     arr.map((x) =>
-                      x.id === l.id ? { ...x, stage: x.stage + 1, updated: today() } : x
+                      x.id === l.id ? withStageDateStamps(x, x.stage + 1) : x
                     )
                   )
                 }
