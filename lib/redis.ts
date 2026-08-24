@@ -33,8 +33,8 @@ export const LIST_STAGES = [
 ] as const;
 
 export const LIST_STAGE_LAST = LIST_STAGES.length - 1; // 6
-/** Bump when list stage indices change so stored Redis blobs can be remapped. */
-export const LIST_PIPELINE_VERSION = 2;
+/** Bump when list stage indices or milestone date backfill rules change. */
+export const LIST_PIPELINE_VERSION = 3;
 
 export type ListItem = {
   id: string;
@@ -126,6 +126,20 @@ export function normalizeListItem(l: Partial<ListItem> & { id: string }): ListIt
   };
 }
 
+/**
+ * If a list is already past a milestone stage but the matching date was never
+ * set (advance happened before auto-stamp, or migration jumped stages), fill
+ * blanks from `updated` so approve/launch metrics can compute.
+ */
+export function stampMissingMilestoneDates(l: ListItem): ListItem {
+  const fallback = l.updated || new Date().toISOString().slice(0, 10);
+  const patch: Partial<ListItem> = {};
+  if (l.stage >= 4 && !l.qcFinishDate) patch.qcFinishDate = fallback;
+  if (l.stage >= 5 && !l.approvedDate) patch.approvedDate = fallback;
+  if (l.stage >= 6 && !l.launchDate) patch.launchDate = fallback;
+  return Object.keys(patch).length ? { ...l, ...patch } : l;
+}
+
 /** Remap stored board blobs to the current list pipeline; safe to call on every load. */
 export function migrateBoardState(raw: BoardState | null | undefined): BoardState {
   const state = { ...emptyState, ...(raw ?? {}) };
@@ -140,6 +154,9 @@ export function migrateBoardState(raw: BoardState | null | undefined): BoardStat
       return l;
     });
   }
+
+  // Fill blank QC / approved / launch dates when the list is already at those stages.
+  lists = lists.map(stampMissingMilestoneDates);
 
   return {
     ...state,

@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { redis, STATE_KEY, emptyState, BoardState, migrateBoardState } from "@/lib/redis";
+import {
+  redis,
+  STATE_KEY,
+  emptyState,
+  BoardState,
+  migrateBoardState,
+  LIST_PIPELINE_VERSION,
+} from "@/lib/redis";
 
 export const dynamic = "force-dynamic";
 
@@ -7,8 +14,8 @@ export async function GET() {
   try {
     const state = await redis.get<BoardState>(STATE_KEY);
     const migrated = migrateBoardState(state ?? emptyState);
-    // Persist stage remaps once so Redis stays on the current pipeline version.
-    if ((state?.listPipelineVersion ?? 1) < 2) {
+    // Persist pipeline migrations (stage remap, date backfill) so Redis stays current.
+    if ((state?.listPipelineVersion ?? 1) < LIST_PIPELINE_VERSION) {
       await redis.set(STATE_KEY, migrated);
     }
     return NextResponse.json(migrated);

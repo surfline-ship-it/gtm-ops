@@ -86,16 +86,16 @@ function listLaunchDays(l: ListItem): number | null {
 
 /**
  * When advancing into a milestone stage, stamp the matching date if blank.
- * Does not overwrite dates already set (edit form remains source of truth for corrections).
- * 4 QC Done → qcFinishDate · 5 Approved → approvedDate · 6 Loaded → launchDate
+ * Uses >= so catching up (e.g. jump to Loaded) also fills skipped milestones.
+ * Does not overwrite dates already set (edit form remains source of truth).
  */
 function withStageDateStamps(list: ListItem, nextStage: number): ListItem {
   const d = today();
   const patch: Partial<ListItem> = { stage: nextStage, updated: d };
-  if (!list.startDate && nextStage >= 0) patch.startDate = d;
-  if (nextStage === 4 && !list.qcFinishDate) patch.qcFinishDate = d;
-  if (nextStage === 5 && !list.approvedDate) patch.approvedDate = d;
-  if (nextStage === 6 && !list.launchDate) patch.launchDate = d;
+  if (!list.startDate) patch.startDate = d;
+  if (nextStage >= 4 && !list.qcFinishDate) patch.qcFinishDate = d;
+  if (nextStage >= 5 && !list.approvedDate) patch.approvedDate = d;
+  if (nextStage >= 6 && !list.launchDate) patch.launchDate = d;
   return { ...list, ...patch };
 }
 
